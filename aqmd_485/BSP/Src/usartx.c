@@ -127,72 +127,17 @@ void sbus_show_ch(void)
 
 ROS_Upper_computer ros_upper_computer;//定义ros上位机
 
-//ros通信：接收处理
-//协议格式参考：附录 -> ros上位机协议.txt
-//处理串口3发过来的数据（ros上位机），当成功接收到一帧数据，则在串口3中断的相应位置将调用此函数
-//参数1是刚刚接收到的一帧数据头指针，参数2是这一帧数据的总长度(包括帧头字节，长度指示字节，校验字节)
-static void ros_dispose_data(uint8_t *data, uint8_t size){
-	memcpy(ros_upper_computer.uart_receive, data+2, size-3);
-	ros_upper_computer.data_size = size-3;
-}
-
 ////////////////////////////////////////////串口中断/////////////////////////////////////////////////
 
 uint16_t ROBOT_UART_LEN;
 uint8_t ROBOT_XOR_CHECK;
 
-//串口中断(SBUS协议解析)
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-	//printf(" Hi, guo yao hui ! \r\n");
-	while (huart->Instance == UART5) //如果是串口5
-	{
-		USART5_SBUS_RX_BUF[USART5_RX_STA] = UART5_RX_BUF[0];
-		if (USART5_RX_STA == 0 && USART5_SBUS_RX_BUF[USART5_RX_STA] != 0x0F) break; //帧头不对，丢掉
-		USART5_RX_STA++;
-		if (USART5_RX_STA > USART5_REC_LEN) USART5_RX_STA = 0;  ///接收数据错误,重新开始接收
-		if (USART5_SBUS_RX_BUF[0] == 0x0F && USART5_SBUS_RX_BUF[24] == 0x00 && USART5_RX_STA == 25)	//接受完一帧数据
-		{			
-			update_sbus(USART5_SBUS_RX_BUF);
-			for (int i = 0; i<25; i++)		//清空缓存区
-				USART5_SBUS_RX_BUF[i] = 0;
-			USART5_RX_STA = 0;
-		}
-		break;
-	}
-	HAL_UART_Receive_IT(&huart5, (u8 *)UART5_RX_BUF, 1);
-	
-	////////////////////////////////////////////////////////////////
-	while (huart->Instance == USART3){ //如果是串口3
-		dma_printf("I love IU! \r\n");
-		USART3_ROBOT_RX_BUF[USART3_RX_STA] = UART3_RX_BUF[0];
-		if (USART3_RX_STA == 0 && USART3_ROBOT_RX_BUF[USART3_RX_STA] != 0xFD) break; //帧头不对，丢掉
-		USART3_RX_STA++;
-		if(USART3_RX_STA == 2){
-			ROBOT_UART_LEN = USART3_ROBOT_RX_BUF[USART3_RX_STA-1];//第2个字节是数据长度
-			break;
-		}
-		if (USART3_RX_STA == ROBOT_UART_LEN+3){	//接受完一帧数据
-			ROBOT_XOR_CHECK = 0;
-			for (int i = 2; i <= ROBOT_UART_LEN+1; i++){//异或校验
-				ROBOT_XOR_CHECK ^= USART3_ROBOT_RX_BUF[i];
-			}
-			if(ROBOT_XOR_CHECK == USART3_ROBOT_RX_BUF[ROBOT_UART_LEN+2]){//成功接收到ros上位机发过来的一帧数据
-				ros_dispose_data(USART3_ROBOT_RX_BUF, ROBOT_UART_LEN+3);//处理数据
-			}
-			for (int i = 0; i<USART3_RX_STA; i++)		//清空缓存区
-				USART3_ROBOT_RX_BUF[i] = 0;
-			USART3_RX_STA = 0;
-			break;
-		}
-		break;
-	}
-	HAL_UART_Receive_IT(&huart3, (u8 *)UART3_RX_BUF, 1);
-	
 	if(huart->Instance == UART4){ //如果是串口4
 		aqmd_receive_one_byte_callback(UART4_RX_BUF[0]);
 	}
-	HAL_UART_Receive_IT(&huart4, (u8 *)UART4_RX_BUF, 1);
+	HAL_UART_Receive_IT(&huart3, (u8 *)UART4_RX_BUF, 1);
 }
 
 

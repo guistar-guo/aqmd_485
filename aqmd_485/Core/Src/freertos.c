@@ -247,7 +247,7 @@ void system_timer_callback(void *argument)
   /* USER CODE BEGIN system_timer_callback */
 	if(!(++systick%200))//系统led灯每隔200个节拍闪烁一次
 	{
-		aqmd_debug_log();
+//		aqmd_debug_log();
 		system_led_heat();
 	}
   /* USER CODE END system_timer_callback */

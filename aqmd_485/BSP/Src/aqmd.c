@@ -1,7 +1,7 @@
 #include "aqmd.h"
 
-uint8_t GLOBLE_ADR;								//本次从站地址
-uint8_t GLOBLE_READ_REG = READ_HOLD_REGISTER;								//本次接收校验寄存器
+uint8_t GLOBLE_ADR = 0x01;								//本次从站地址
+uint8_t GLOBLE_READ_REG = WRITE_SINGLE_REGISTER;								//本次接收校验寄存器
 uint8_t aqmd_rec_buf[100];				//接收缓冲
 uint8_t aqmd_rec_cur_cnt;					//记录接收缓冲区的有效数据个数
 uint16_t rec_data;								//记录接收到的数据
@@ -160,23 +160,27 @@ uint8_t test_rec[7]={0x00, 0x03, 0x03, 0x02, 0x03, 0x95, 0x25};
 int aqmd_read_reg(uint8_t ADR, uint16_t addr){
 	GLOBLE_ADR = ADR;
 	GLOBLE_READ_REG = READ_HOLD_REGISTER;
-	uint8_t send_temp[8] = {ADR, READ_HOLD_REGISTER, ((0Xff00 & addr)>>8), (0x00ff & addr), 0x00, 0x01, 0xff, 0xff};
+	uint8_t send_temp[8] = {ADR, READ_HOLD_REGISTER, \
+	((0Xff00 & addr)>>8), (0x00ff & addr), 0x00, 0x01, 0xff, 0xff};
 	uint16_t send_data_crc_check = CRC16(send_temp, 6);
 	send_temp[6] = (0x00ff & send_data_crc_check);
 	send_temp[7] = ((0xff00 & send_data_crc_check)>>8);
+	aqmdDataState = undecided;//准备接收
 	aqmd_send_bytes(send_temp, 8);
 	uint16_t timeout = 0xffff;
 	while(aqmdDataState != correct && timeout--){}
+	AqmdDataStateTypeDef tempState = aqmdDataState;
 	aqmdDataState = undecided;//准备接收下一个字节
-	return aqmdDataState == correct ? rec_data : -1;	
+	return tempState == correct ? rec_data : -1;	
 }
 
 /**************************************************************************
 函数功能：给爱思控的一个寄存器发送一个字节的数据
 入口参数：ADR  从机地址	； addr 要写的从机寄存器地址；	data	要写的数据
-返回  值：无
+返回  值：如果开启宏定义IS_RECEIVE_WRITE_RETURN，则写入成功返回参数2 data
+					，否则返回-1;而如果未开启IS_RECEIVE_WRITE_RETURN，则返回-1
 **************************************************************************/
-void aqmd_send_one_byte_to_reg(uint8_t ADR, uint16_t addr, uint16_t data){
+int aqmd_send_one_byte_to_reg(uint8_t ADR, uint16_t addr, uint16_t data){
 	GLOBLE_ADR = ADR;
 	GLOBLE_READ_REG = WRITE_SINGLE_REGISTER;
 	uint8_t send_temp[8] = {ADR, WRITE_SINGLE_REGISTER, ((0Xff00 & addr)>>8),\
@@ -184,16 +188,28 @@ void aqmd_send_one_byte_to_reg(uint8_t ADR, uint16_t addr, uint16_t data){
 	uint16_t send_data_crc_check = CRC16(send_temp, 6);
 	send_temp[6] = (0x00ff & send_data_crc_check);
 	send_temp[7] = ((0xff00 & send_data_crc_check)>>8);
+	aqmdDataState = undecided;//准备接收
 	aqmd_send_bytes(send_temp, 8);
+#if (IS_RECEIVE_WRITE_RETURN == 1)
+  uint16_t timeout = 0xffff;
+  while(aqmdDataState != correct && timeout--){}
+  AqmdDataStateTypeDef tempState = aqmdDataState;
+  aqmdDataState = undecided;//准备接收下一个字节
+  return tempState == correct ? rec_send_data : -1;
+#else
+  return -1;
+#endif		
 }
 
 /**************************************************************************
 函数功能：设置指定爱思控的pwm占空比
 入口参数：ADR  从机地址	； pwm	输入范围-1000到1000，即占空比等于pwm*0.1
-返回  值：无
+返回  值：返回参数2输入的值，如果开启IS_RECEIVE_WRITE_RETURN的话。否则返回-1
 **************************************************************************/
-void aqmd_set_pwm(uint8_t ADR, short pwm){
-	aqmd_send_one_byte_to_reg(ADR, REG_SET_PWM, pwm);
+int aqmd_set_pwm(uint8_t ADR, short pwm){
+	int xreturn = 0;
+	xreturn = aqmd_send_one_byte_to_reg(ADR, REG_SET_PWM, pwm);
+	return xreturn;
 }
 
 /**************************************************************************
@@ -202,21 +218,21 @@ void aqmd_set_pwm(uint8_t ADR, short pwm){
 返回  值：无
 **************************************************************************/
 void aqmd_debug_log(void){
-		for (int i = 0; i<10; i++){
-			rtos_printf("0x%x ", aqmd_rec_buf[i]);
-		}
-		rtos_printf("\r\n");
-		
-		if(aqmdDataState == undecided){
-			rtos_printf("undecided\r\n");
-		}
-		else if(aqmdDataState == dataError){
-			rtos_printf("dataError\r\n");
-		}
-		else if(aqmdDataState == correct){
-			rtos_printf("correct\r\n");
-		}
-		
+//		for (int i = 0; i<10; i++){
+//			rtos_printf("0x%x ", aqmd_rec_buf[i]);
+//		}
+//		rtos_printf("\r\n");
+//		
+//		if(aqmdDataState == undecided){
+//			rtos_printf("undecided\r\n");
+//		}
+//		else if(aqmdDataState == dataError){
+//			rtos_printf("dataError\r\n");
+//		}
+//		else if(aqmdDataState == correct){
+//			rtos_printf("correct\r\n");
+//		}
+		rtos_printf("%d \r\n", rec_send_data);
 		osDelay(200);
 }
 
@@ -232,8 +248,8 @@ void aqmd_test(void){
 		aqmd_set_pwm(0x01, 0);
 		osDelay(500);
 		
-//		aqmd_debug_log();
-//		osDelay(200);
+		aqmd_debug_log();
+		osDelay(200);
 	}
 }
 
